@@ -1,0 +1,468 @@
+# ============================================================================
+# Enterprise Insider Threat Detection Platform - .gitignore
+# ============================================================================
+
+# ============================================================================
+# Python
+# ============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ============================================================================
+# Virtual Environments
+# ============================================================================
+venv/
+ENV/
+env/
+.venv/
+.ENV/
+env.bak/
+venv.bak/
+pythonenv*/
+
+# ============================================================================
+# Node.js / Frontend
+# ============================================================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+frontend/dist/
+frontend/build/
+.next/
+out/
+
+# Vite
+frontend/.vite/
+*.local
+
+# Testing
+coverage/
+
+# Production
+*.lcov
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Local env files
+.env*.local
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# ============================================================================
+# Database Files
+# ============================================================================
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+enterprise_threat.db
+
+# Database migrations (keep structure, ignore generated)
+# migrations/versions/*.pyc
+
+# ============================================================================
+# Log Files
+# ============================================================================
+
+# Application logs
+*.log
+server.log
+server_err.log
+logs/
+log/
+
+# ============================================================================
+# IDE / Editor Settings
+# ============================================================================
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains (PyCharm, WebStorm)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.idea_modules/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*.swn
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ============================================================================
+# Operating System Files
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+
+# ============================================================================
+# Environment & Secrets (CRITICAL - Never commit these!)
+# ============================================================================
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.staging
+.env*.local
+*.env
+
+# Secret keys and certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# AWS
+.aws/
+aws-credentials
+
+# Google Cloud
+*.json.enc
+service-account*.json
+
+# Azure
+.azure/
+
+# ============================================================================
+# ML Models & Data (Large files - use Git LFS or exclude)
+# ============================================================================
+
+# Trained models (can be large)
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.onnx
+*.pb
+models/
+saved_models/
+checkpoints/
+
+# Model cache (Transformers, Sentence-Transformers)
+.cache/
+~/.cache/huggingface/
+~/.cache/torch/
+
+# Large datasets
+*.csv
+*.parquet
+*.feather
+data/raw/
+data/processed/
+
+# SHAP/LIME outputs (can regenerate)
+# xai_outputs/  # Uncomment if you want to exclude
+
+# ============================================================================
+# Document Storage (User uploads - exclude from repo)
+# ============================================================================
+
+# Uploaded documents (contains user data)
+backend/storage/documents/FINANCE/*
+backend/storage/documents/HR/*
+backend/storage/documents/IT/*
+backend/storage/documents/LEGAL/*
+backend/storage/documents/MARKETING/*
+backend/storage/documents/OPERATIONS/*
+
+# Keep directory structure
+!backend/storage/documents/FINANCE/.gitkeep
+!backend/storage/documents/HR/.gitkeep
+!backend/storage/documents/IT/.gitkeep
+!backend/storage/documents/LEGAL/.gitkeep
+!backend/storage/documents/MARKETING/.gitkeep
+!backend/storage/documents/OPERATIONS/.gitkeep
+
+# ============================================================================
+# Docker (for deployment)
+# ============================================================================
+
+# Docker
+.docker/
+docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.yml
+!docker-compose.prod.yml
+
+# ============================================================================
+# Deployment
+# ============================================================================
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Kubernetes
+*.kubeconfig
+
+# Serverless
+.serverless/
+
+# ============================================================================
+# Temporary Files
+# ============================================================================
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Session files
+*.session
+
+# ============================================================================
+# Testing & Quality
+# ============================================================================
+
+# Test outputs
+test-results/
+test-output/
+.nyc_output/
+
+# Linting
+.eslintcache
+.stylelintcache
+
+# ============================================================================
+# Miscellaneous
+# ============================================================================
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Package files
+*.jar
+*.war
+*.nar
+*.ear
+
+# Profiling
+*.prof
+
+# ============================================================================
+# Project-Specific Excludes
+# ============================================================================
+
+# Exclude sample/test data (regenerate with scripts)
+# data/
+
+# Keep these important files (use ! to negate)
+!requirements.txt
+!package.json
+!package-lock.json
+!README.md
+!LICENSE
+!.gitignore
+!Dockerfile
+!docker-compose.yml
