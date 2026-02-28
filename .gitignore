@@ -450,6 +450,11 @@ test-output/
 # Profiling
 *.prof
 
+# Architecture documentation (exclude internal design docs)
+ARCHITECTURE_DIAGRAMS.md
+QUICK_START_REALTIME.md
+REALTIME_ARCHITECTURE.md
+
 # ============================================================================
 # Project-Specific Excludes
 # ============================================================================
