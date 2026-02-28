@@ -229,6 +229,11 @@ class RiskFusionEngine:
         # Cap at 1.0
         final_score = min(final_score, 1.0)
         
+        # Log risk computation details
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Risk computation: base={base_score:.3f}, final={final_score:.3f}, threshold={self.alert_threshold:.3f}, will_alert={final_score >= self.alert_threshold}")
+        
         # Determine risk level
         risk_level = RiskLevel.LOW
         for level, threshold in self.RISK_THRESHOLDS.items():
@@ -277,7 +282,8 @@ class RiskFusionEngine:
         if action in ['download', 'modify', 'delete']:
             risk_factors.append(f"High-risk action: {action}")
         
-        return RiskAssessment(
+        # Create assessment
+        assessment = RiskAssessment(
             risk_score=final_score,
             risk_level=risk_level,
             severity_label=severity_label,
@@ -285,10 +291,15 @@ class RiskFusionEngine:
             weighted_components=weighted_components,
             is_anomalous=behavior_score > 0.5,
             is_cross_department=is_cross_department,
-            requires_alert=final_score >= self.alert_threshold,
+            requires_alert=False,  # Set below using should_alert()
             primary_risk_factor=primary_factor,
             risk_factors=risk_factors
         )
+        
+        # Set requires_alert using the comprehensive should_alert() logic
+        assessment.requires_alert = self.should_alert(assessment)
+        
+        return assessment
     
     def should_alert(self, assessment: RiskAssessment) -> bool:
         """
@@ -300,25 +311,38 @@ class RiskFusionEngine:
         Returns:
             True if alert should be generated
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Always alert on critical
         if assessment.risk_level == RiskLevel.CRITICAL:
+            logger.info(f"Alert REQUIRED: CRITICAL risk level (score={assessment.risk_score:.3f})")
             return True
         
         # Alert on high with multiple risk factors
         if assessment.risk_level == RiskLevel.HIGH and len(assessment.risk_factors) >= 2:
+            logger.info(f"Alert REQUIRED: HIGH risk with {len(assessment.risk_factors)} factors")
             return True
         
         # Alert on any tampering detection
         if assessment.components.integrity_score > 0:
+            logger.info(f"Alert REQUIRED: Tampering detected (integrity={assessment.components.integrity_score:.3f})")
             return True
         
         # Alert on cross-department download of confidential data
         if (assessment.is_cross_department and 
             assessment.components.classification_score > 0.7 and
             assessment.components.action_multiplier >= 1.5):
+            logger.info(f"Alert REQUIRED: Cross-dept sensitive access (class={assessment.components.classification_score:.3f})")
             return True
         
-        return assessment.risk_score >= self.alert_threshold
+        # Fallback to threshold check
+        will_alert = assessment.risk_score >= self.alert_threshold
+        if will_alert:
+            logger.info(f"Alert REQUIRED: Threshold check (score={assessment.risk_score:.3f} >= {self.alert_threshold:.3f})")
+        else:
+            logger.info(f"Alert SKIPPED: Below threshold (score={assessment.risk_score:.3f} < {self.alert_threshold:.3f})")
+        return will_alert
     
     def generate_alert_summary(
         self,

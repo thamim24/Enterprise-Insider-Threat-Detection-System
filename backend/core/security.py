@@ -254,3 +254,21 @@ def check_department_access(
         "risk_multiplier": risk_multiplier,
         "warning": "This action is monitored for security." if is_cross_department else None
     }
+
+
+def verify_token_websocket(token: str) -> Optional[TokenData]:
+    """
+    Verify JWT token for WebSocket connections
+    
+    Args:
+        token: JWT token string from query parameter
+        
+    Returns:
+        TokenData if valid, None if invalid
+    """
+    try:
+        return decode_token(token)
+    except HTTPException:
+        return None
+    except Exception:
+        return None

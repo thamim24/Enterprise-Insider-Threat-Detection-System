@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { alertsAPI, reportsAPI, mlAPI, eventsAPI } from '../api/client';
 import { formatDateTimeIST, formatTimeIST } from '../utils/dateUtils';
 import ShapChart from '../components/ShapChart';
 import LimeViewer from '../components/LimeViewer';
 import DiffViewer from '../components/DiffViewer';
 import RiskBadge from '../components/RiskBadge';
+import useWebSocket from '../hooks/useWebSocket';
 import {
   BarChart3,
   Activity,
@@ -44,11 +45,83 @@ function AnalystDashboard() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [expandedAlerts, setExpandedAlerts] = useState(new Set());
   const [selectedModification, setSelectedModification] = useState(null);
+  const [liveAlerts, setLiveAlerts] = useState([]);
+  const [liveEvents, setLiveEvents] = useState([]);
+  
+  const queryClient = useQueryClient();
+
+  // WebSocket for real-time updates
+  const { isConnected, messages, connectionError } = useWebSocket((message) => {
+    console.log('📨 Real-time update:', message);
+    
+    // Handle different message types
+    if (message.type === 'new_alert') {
+      // Add complete alert to live alerts at the top
+      if (message.alert) {
+        setLiveAlerts(prev => [{
+          ...message.alert,
+          isNew: true
+        }, ...prev.slice(0, 9)]); // Keep last 10
+      }
+      
+      // Invalidate alerts query to refresh
+      queryClient.invalidateQueries(['alerts']);
+      
+      // Show notification
+      if (message.alert?.priority === 'critical' || message.alert?.priority === 'high') {
+        showNotification(
+          `🚨 ${message.alert.summary || 'Security Alert'}`,
+          message.alert.priority
+        );
+      }
+    }
+    
+    if (message.type === 'new_event') {
+      // Add to live events
+      setLiveEvents(prev => [{
+        event_id: message.event_id,
+        user_id: message.user_id,
+        action: message.action,
+        document_name: message.document_name,
+        risk_score: message.risk_score,
+        risk_level: message.risk_level,
+        timestamp: message.timestamp,
+        isNew: true
+      }, ...prev.slice(0, 9)]); // Keep last 10
+      
+      // Invalidate related queries
+      queryClient.invalidateQueries(['events']);
+      queryClient.invalidateQueries(['ml', 'top-risk-users']);
+      queryClient.invalidateQueries(['ml', 'anomaly-timeline']);
+    }
+    
+    if (message.type === 'system_status') {
+      // Update pipeline status
+      queryClient.invalidateQueries(['ml', 'status']);
+    }
+  });
+
+  // Helper function for notifications
+  const showNotification = (title, level) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, {
+        body: `${level.toUpperCase()} risk alert detected`,
+        icon: '/favicon.ico'
+      });
+    }
+  };
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   // Fetch alerts summary
   const { data: alertsData, isLoading: loadingAlerts } = useQuery({
     queryKey: ['alerts', 'summary'],
-    queryFn: () => alertsAPI.list({ limit: 100 }),
+    queryFn: () => alertsAPI.list({ page_size: 100 }),  // Use page_size instead of limit
   });
 
   // Fetch daily report
@@ -102,8 +175,13 @@ function AnalystDashboard() {
   // Use real data from API or empty defaults (NO fake fallbacks)
   const anomalyTimeline = timelineData?.timeline || [];
   
-  // Calculate risk distribution from real alerts
-  const alerts = alertsData?.alerts || [];
+  // Calculate risk distribution from real alerts (merge DB alerts + live alerts)
+  const dbAlerts = alertsData?.alerts || [];
+  const allAlerts = [...liveAlerts, ...dbAlerts];
+  const alerts = allAlerts.filter((alert, index, self) => 
+    index === self.findIndex(a => a.alert_id === alert.alert_id)
+  ); // Deduplicate
+  
   const riskDistribution = [
     { name: 'Critical', value: alerts.filter(a => a.severity === 'CRITICAL' || a.priority === 'CRITICAL').length, color: RISK_COLORS.CRITICAL },
     { name: 'High', value: alerts.filter(a => a.severity === 'HIGH' || a.priority === 'HIGH').length, color: RISK_COLORS.HIGH },
@@ -123,7 +201,10 @@ function AnalystDashboard() {
       eventCount: u.event_count
     }));
 
-  const recentAlerts = alerts.slice(0, 5);
+  // Recent alerts sorted by time (not priority) to show mix of alert levels
+  const recentAlerts = [...alerts]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, 10); // Show top 10 most recent
 
   // Show loading state
   const isLoading = loadingAlerts || loadingReport || loadingStatus;
@@ -143,11 +224,37 @@ function AnalystDashboard() {
             )}
           </p>
         </div>
-        <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${pipelineStatus?.pipeline_active ? 'bg-green-50' : 'bg-gray-50'}`}>
-          <div className={`w-2 h-2 rounded-full ${pipelineStatus?.pipeline_active ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-          <span className={`text-sm ${pipelineStatus?.pipeline_active ? 'text-green-700' : 'text-gray-500'}`}>
-            {pipelineStatus?.pipeline_active ? 'Pipeline Active' : 'Loading...'}
-          </span>
+        <div className="flex items-center space-x-4">
+          {/* Real-time connection status */}
+          <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg border ${
+            isConnected ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className={`w-2 h-2 rounded-full ${
+              isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+            }`} />
+            <span className={`text-xs font-medium ${
+              isConnected ? 'text-green-700' : 'text-gray-500'
+            }`}>
+              {isConnected ? 'Live' : 'Connecting...'}
+            </span>
+            {connectionError && (
+              <span className="text-xs text-red-600">({connectionError})</span>
+            )}
+          </div>
+          
+          {/* Pipeline status */}
+          <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
+            pipelineStatus?.pipeline_active ? 'bg-blue-50' : 'bg-gray-50'
+          }`}>
+            <div className={`w-2 h-2 rounded-full ${
+              pipelineStatus?.pipeline_active ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'
+            }`} />
+            <span className={`text-sm ${
+              pipelineStatus?.pipeline_active ? 'text-blue-700' : 'text-gray-500'
+            }`}>
+              {pipelineStatus?.pipeline_active ? 'Pipeline Active' : 'Loading...'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -476,8 +583,8 @@ function AnalystDashboard() {
         {(modificationsData?.modifications || []).length > 0 ? (
           <div className="space-y-4">
             {/* Modification List */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {(modificationsData?.modifications || []).slice(0, 4).map((mod) => (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto">
+              {(modificationsData?.modifications || []).map((mod) => (
                 <div 
                   key={mod.modification_id}
                   className={`p-4 border rounded-lg cursor-pointer transition-all ${

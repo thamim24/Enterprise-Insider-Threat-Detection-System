@@ -100,12 +100,23 @@ async def list_alerts(
     # Paginate
     offset = (page - 1) * page_size
     alerts = query.order_by(
-        Alert.priority.asc(),  # Critical first
-        Alert.created_at.desc()
+        Alert.created_at.desc()  # Most recent first (all priorities mixed by time)
     ).offset(offset).limit(page_size).all()
     
+    # Convert alerts to response, catching any errors
+    alert_responses = []
+    for a in alerts:
+        try:
+            alert_responses.append(alert_to_response(a, db))
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error converting alert {a.alert_id}: {e}", exc_info=True)
+            # Skip this alert and continue
+            continue
+    
     return AlertListResponse(
-        alerts=[alert_to_response(a, db) for a in alerts],
+        alerts=alert_responses,
         total=total,
         page=page,
         page_size=page_size,
@@ -305,36 +316,45 @@ def alert_to_response(alert: Alert, db: Session) -> AlertResponse:
             # Build highlights from LIME features
             highlights = []
             if explanation.lime_features:
-                # Handle both dict and list formats
-                if isinstance(explanation.lime_features, dict):
-                    for word, weight in explanation.lime_features.items():
-                        highlights.append({
-                            "word": word,
-                            "weight": weight,
-                            "start": 0,
-                            "end": len(word)
-                        })
-                elif isinstance(explanation.lime_features, list):
-                    for item in explanation.lime_features:
-                        if isinstance(item, dict):
+                try:
+                    # Handle both dict and list formats
+                    if isinstance(explanation.lime_features, dict):
+                        for word, weight in explanation.lime_features.items():
                             highlights.append({
-                                "word": item.get("word", ""),
-                                "weight": item.get("weight", 0),
-                                "start": item.get("start", 0),
-                                "end": item.get("end", 0)
-                            })
-                        elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                            highlights.append({
-                                "word": str(item[0]),
-                                "weight": float(item[1]) if len(item) > 1 else 0,
+                                "word": word,
+                                "weight": weight,
                                 "start": 0,
-                                "end": len(str(item[0]))
+                                "end": len(word)
                             })
+                    elif isinstance(explanation.lime_features, list):
+                        for item in explanation.lime_features:
+                            if isinstance(item, dict):
+                                highlights.append({
+                                    "word": item.get("word", ""),
+                                    "weight": item.get("weight", 0),
+                                    "start": item.get("start", 0),
+                                    "end": item.get("end", 0)
+                                })
+                            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                                highlights.append({
+                                    "word": str(item[0]),
+                                    "weight": float(item[1]) if len(item) > 1 else 0,
+                                    "start": 0,
+                                    "end": len(str(item[0]))
+                                })
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error processing LIME features for event {event.id}: {e}")
+                    logger.error(f"LIME features type: {type(explanation.lime_features)}")
+                    logger.error(f"LIME features content: {explanation.lime_features}")
+                    highlights = []
+                    
             explanation_data = {
                 "type": explanation.explanation_type,
                 "highlights": highlights,
-                "risk_components": explanation.risk_components,
-                "shap_values": explanation.shap_values
+                "risk_components": explanation.risk_components or {},
+                "shap_values": explanation.shap_values or {}
             }
         
         # Get document content

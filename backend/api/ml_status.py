@@ -451,7 +451,7 @@ async def get_report_summary(
     # Top risk events (join with user to get username)
     top_events = db.query(Event).filter(
         Event.timestamp >= week_start
-    ).order_by(Event.risk_score.desc()).limit(10).all()
+    ).order_by(Event.risk_score.desc()).limit(25).all()
     
     return {
         "period": "weekly",

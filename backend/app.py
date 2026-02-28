@@ -4,6 +4,9 @@ Main FastAPI Application Entry Point
 
 This is the nervous system of the threat detection platform.
 All requests flow through here to the ML engine.
+
+ARCHITECTURE: Event-Driven Real-Time System
+    API → Queue → ML Worker → DB → WebSocket Broadcast → Dashboard
 """
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +14,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import time
 import logging
+import asyncio
 
 from .core.config import get_settings
 from .db import init_db, create_sample_users, SessionLocal
@@ -22,6 +26,8 @@ from .api import (
     reports_router,
     ml_router
 )
+from .realtime import websocket_router
+from .streaming import ml_worker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,12 +40,13 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """
     Application lifespan events
+    Starts background ML worker for event-driven processing
     """
     # Startup
-    logger.info("Starting Enterprise Insider Threat Detection Platform...")
+    logger.info("🚀 Starting Enterprise Insider Threat Detection Platform...")
     
     # Initialize database
-    logger.info("Initializing database...")
+    logger.info("📊 Initializing database...")
     init_db()
     
     # Create sample users if needed
@@ -47,17 +54,28 @@ async def lifespan(app: FastAPI):
     try:
         from .db import User
         if db.query(User).count() == 0:
-            logger.info("Creating sample users...")
+            logger.info("👤 Creating sample users...")
             create_sample_users(db)
     finally:
         db.close()
     
-    logger.info("Platform started successfully!")
+    # Start background ML worker
+    logger.info("⚙️ Starting background ML worker...")
+    worker_task = asyncio.create_task(ml_worker())
+    logger.info("✅ ML worker started - event-driven processing enabled")
+    
+    logger.info("✨ Platform started successfully!")
+    logger.info("📡 Real-time architecture: API → Queue → Worker → ML → DB → WebSocket")
     
     yield
     
     # Shutdown
-    logger.info("Shutting down...")
+    logger.info("🛑 Shutting down...")
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        logger.info("ML worker stopped")
 
 
 # Create FastAPI application
@@ -129,6 +147,7 @@ app.include_router(documents_router, prefix="/api")
 app.include_router(alerts_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(ml_router, prefix="/api")
+app.include_router(websocket_router)  # WebSocket real-time updates
 
 
 # Health check endpoint

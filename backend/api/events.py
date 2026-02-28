@@ -1,7 +1,7 @@
 """
 Event Ingestion API Routes
-CRITICAL - This feeds the ML pipeline
-Every document action triggers event ingestion
+CRITICAL - This feeds the ML pipeline via async queue
+Every document action triggers event ingestion → Queue → Background Worker → ML
 """
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from ..db import get_db, Event, User, Document, Alert, Explanation, ActionType, 
 from ..db.models import DocumentModification
 from ..core.security import get_current_active_user, TokenData
 from ..ml_engine import ThreatDetectionPipeline, UserEvent, PipelineResult
+from ..streaming.event_queue import event_queue, get_queue_stats
 
 router = APIRouter(prefix="/events", tags=["Event Ingestion"])
 
@@ -117,106 +118,66 @@ async def ingest_event(
     """
     CRITICAL ENDPOINT - Ingest a document action event
     
-    This is the main entry point for all document actions.
-    Every view, download, upload, modify triggers this endpoint.
+    NEW ARCHITECTURE:
+    This endpoint now queues events for async processing.
+    API returns instantly - ML processing happens in background worker.
     
-    The ML pipeline processes the event and returns:
-    - Risk score and level
-    - Whether an alert is generated
-    - Warning message to display to user
+    Flow:
+        API → Queue → Background Worker → ML Pipeline → DB → WebSocket Broadcast
+    
+    Returns immediate acknowledgment - actual risk assessment happens async.
     """
-    # Get pipeline
-    pipeline = get_pipeline()
+    # Check queue capacity
+    queue_stats = await get_queue_stats()
+    if queue_stats['is_near_capacity']:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Event queue is near capacity. Please try again shortly."
+        )
     
-    # Create UserEvent for ML pipeline
-    user_event = UserEvent(
-        user_id=current_user.user_id,
-        user_department=current_user.department,
-        document_id=event_data.document_id,
-        document_name=event_data.document_name,
-        target_department=event_data.target_department,
-        action=event_data.action,
-        bytes_transferred=event_data.bytes_transferred,
-        source_ip=event_data.source_ip,
-        device_info=event_data.device_info,
-        session_id=event_data.session_id,
-        timestamp=datetime.utcnow()
-    )
+    # Create event payload for queue
+    event_payload = {
+        'user_id': current_user.user_id,
+        'username': current_user.username,
+        'user_department': current_user.department,
+        'document_id': event_data.document_id,
+        'document_name': event_data.document_name,
+        'target_department': event_data.target_department,
+        'action': event_data.action,
+        'bytes_transferred': event_data.bytes_transferred,
+        'source_ip': event_data.source_ip,
+        'device_info': event_data.device_info,
+        'session_id': event_data.session_id,
+        'document_content': event_data.document_content,
+        'queued_at': datetime.utcnow().isoformat()
+    }
     
-    # Run ML pipeline
-    result = pipeline.run(user_event, event_data.document_content)
+    # Queue event for async processing
+    await event_queue.put(event_payload)
     
-    # Generate event ID
     event_id = f"EVT-{uuid.uuid4().hex[:12].upper()}"
     
-    # Store event in database
-    db_event = Event(
-        event_id=event_id,
-        user_id=db.query(User).filter(User.user_id == current_user.user_id).first().id,
-        user_department=current_user.department,
-        action=ActionType(event_data.action),
-        document_id=db.query(Document).filter(
-            Document.document_id == event_data.document_id
-        ).first().id if db.query(Document).filter(
-            Document.document_id == event_data.document_id
-        ).first() else 1,
-        target_department=event_data.target_department,
-        timestamp=user_event.timestamp,
-        bytes_transferred=event_data.bytes_transferred,
-        source_ip=event_data.source_ip,
-        device_info=event_data.device_info,
-        session_id=event_data.session_id,
-        is_cross_department=result.is_cross_department,
-        behavior_score=result.behavior_score,
-        risk_score=result.risk_score,
-        risk_level=result.risk_level
-    )
+    # Return immediate response
+    # Note: Actual risk assessment happens in background
+    is_cross_dept = current_user.department.lower() != event_data.target_department.lower()
     
-    db.add(db_event)
-    db.commit()
-    db.refresh(db_event)
-    
-    # Store document modification if this is a modify action with content
-    if event_data.action == "modify" and event_data.document_content:
-        background_tasks.add_task(
-            store_document_modification,
-            current_user, event_data, result
-        )
-    
-    # Create alert if needed (in background)
-    if result.requires_alert:
-        background_tasks.add_task(
-            create_alert_from_result,
-            db_event.id, result, current_user.user_id
-        )
-    
-    # Store explanation (in background)
-    if result.shap_explanation or result.lime_explanation:
-        background_tasks.add_task(
-            store_explanation,
-            db_event.id, result
-        )
-    
-    # Determine warning message for user
     warning_message = None
-    if result.is_cross_department:
-        warning_message = "⚠️ This action is monitored for security."
-    if result.risk_level in ["high", "critical"]:
-        warning_message = "⚠️ This action has been flagged for security review."
+    if is_cross_dept:
+        warning_message = "⚠️ This action is being processed for security review."
     
     return EventResponse(
         event_id=event_id,
-        timestamp=user_event.timestamp,
-        risk_score=result.risk_score,
-        risk_level=result.risk_level,
-        severity=result.severity,
-        requires_alert=result.requires_alert,
+        timestamp=datetime.utcnow(),
+        risk_score=0.0,  # Placeholder - real score computed async
+        risk_level="pending",
+        severity="pending",
+        requires_alert=False,
         warning_message=warning_message,
-        behavior_score=result.behavior_score,
-        sensitivity_score=result.sensitivity_score,
-        integrity_score=result.integrity_score,
-        is_cross_department=result.is_cross_department,
-        is_anomalous=result.is_anomalous
+        behavior_score=0.0,
+        sensitivity_score=0.0,
+        integrity_score=0.0,
+        is_cross_department=is_cross_dept,
+        is_anomalous=False
     )
 
 
@@ -280,6 +241,24 @@ async def get_event_detail(
     user = db.query(User).filter(User.id == event.user_id).first()
     
     return event_to_detail(event, user)
+
+
+@router.get("/queue/status")
+async def get_queue_status(
+    current_user: TokenData = Depends(get_current_active_user)
+):
+    """
+    Get event queue status for monitoring
+    Shows real-time processing queue statistics
+    """
+    stats = await get_queue_stats()
+    return {
+        "queue_size": stats['current_size'],
+        "queue_capacity": stats['max_size'],
+        "utilization_percent": round(stats['utilization_percent'], 2),
+        "is_healthy": not stats['is_near_capacity'],
+        "status": "healthy" if not stats['is_near_capacity'] else "near_capacity"
+    }
 
 
 def event_to_detail(event: Event, user: User) -> EventDetail:
